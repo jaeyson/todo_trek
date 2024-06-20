@@ -252,7 +252,6 @@ defmodule TodoTrekWeb.CoreComponents do
   attr :label, :string, default: nil
   attr :value, :any
   attr :border, :boolean, default: true
-  attr :strike_through, :boolean, default: false
 
   attr :type, :string,
     default: "text",
@@ -267,6 +266,7 @@ defmodule TodoTrekWeb.CoreComponents do
   attr :prompt, :string, default: nil, doc: "the prompt for select inputs"
   attr :options, :list, doc: "the options to pass to Phoenix.HTML.Form.options_for_select/2"
   attr :multiple, :boolean, default: false, doc: "the multiple flag for select inputs"
+  attr :class, :string, default: nil
 
   attr :rest, :global,
     include: ~w(autocomplete cols disabled form list max maxlength min minlength
@@ -288,7 +288,7 @@ defmodule TodoTrekWeb.CoreComponents do
       assign_new(assigns, :checked, fn -> Phoenix.HTML.Form.normalize_value("checkbox", value) end)
 
     ~H"""
-    <div phx-feedback-for={@name}>
+    <div>
       <label class="flex items-center gap-4 text-sm leading-6 text-zinc-600">
         <input type="hidden" name={@name} value="false" />
         <input
@@ -309,7 +309,7 @@ defmodule TodoTrekWeb.CoreComponents do
 
   def input(%{type: "select"} = assigns) do
     ~H"""
-    <div phx-feedback-for={@name}>
+    <div>
       <.label for={@id}><%= @label %></.label>
       <select
         id={@id}
@@ -328,7 +328,7 @@ defmodule TodoTrekWeb.CoreComponents do
 
   def input(%{type: "textarea"} = assigns) do
     ~H"""
-    <div phx-feedback-for={@name}>
+    <div>
       <.label for={@id}><%= @label %></.label>
       <textarea
         id={@id}
@@ -349,7 +349,7 @@ defmodule TodoTrekWeb.CoreComponents do
   # All other inputs text, datetime-local, url, password, etc. are handled here...
   def input(assigns) do
     ~H"""
-    <div phx-feedback-for={@name}>
+    <div>
       <.label for={@id}><%= @label %></.label>
       <input
         type={@type}
@@ -361,8 +361,8 @@ defmodule TodoTrekWeb.CoreComponents do
           @border && "phx-no-feedback:border-zinc-300 phx-no-feedback:focus:border-zinc-400",
           @border && "border-zinc-300 focus:border-zinc-400",
           if(!@border, do: "border-0"),
-          if(@strike_through, do: "line-through"),
-          @errors != [] && "border-rose-400 focus:border-rose-400"
+          @errors != [] && "border-rose-400 focus:border-rose-400",
+          @class
         ]}
         {@rest}
       />

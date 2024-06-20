@@ -2,5 +2,8 @@
 @import "tailwindcss/components";
 @import "tailwindcss/utilities";
 
+.phx-click-loading {
+  /* opacity: 0.5; */
+}
 /* This file is for your main application CSS */
 

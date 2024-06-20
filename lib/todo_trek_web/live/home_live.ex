@@ -8,6 +8,13 @@ defmodule TodoTrekWeb.HomeLive do
     ~H"""
     <div id="home" class="space-y-5">
       <.header>
+        The count is
+        <tt-counter id="counter"><%= @count %></tt-counter>
+      </.header>
+      <.button phx-click={JS.push("dec", loading: "#counter")}>-</.button>
+      <.button phx-click={JS.push("inc", loading: "#counter")}>+</.button>
+
+      <.header>
         Your Lists
         <:actions>
           <.link patch={~p"/lists/new"}>
@@ -34,7 +41,12 @@ defmodule TodoTrekWeb.HomeLive do
                 <.link patch={~p"/lists/#{list}/edit"} alt="Edit list">
                   <.icon name="hero-pencil-square" />
                 </.link>
-                <.link phx-click="delete-list" phx-value-id={list.id} alt="delete list" data-confirm="Are you sure?">
+                <.link
+                  phx-click="delete-list"
+                  phx-value-id={list.id}
+                  alt="delete list"
+                  data-confirm="Are you sure?"
+                >
                   <.icon name="hero-x-mark" />
                 </.link>
               </:actions>
@@ -48,7 +60,11 @@ defmodule TodoTrekWeb.HomeLive do
           </div>
         </div>
       </div>
-      <Timeline.activity_logs stream={@streams.activity_logs} page={@page} end_of_timeline?={@end_of_timeline?}/>
+      <Timeline.activity_logs
+        stream={@streams.activity_logs}
+        page={@page}
+        end_of_timeline?={@end_of_timeline?}
+      />
     </div>
     <.modal
       :if={@live_action in [:new_list, :edit_list]}
@@ -72,13 +88,14 @@ defmodule TodoTrekWeb.HomeLive do
   def mount(_params, _session, socket) do
     if connected?(socket) do
       Todos.subscribe(socket.assigns.scope)
+      # :timer.send_interval(1000, :tick)
     end
 
     lists = Todos.active_lists(socket.assigns.scope, 20)
 
     {:ok,
      socket
-     |> assign(page: 1, per_page: 20)
+     |> assign(page: 1, per_page: 20, count: 0)
      |> stream(:lists, lists)
      |> paginate_logs(1)}
   end
@@ -103,6 +120,10 @@ defmodule TodoTrekWeb.HomeLive do
     socket
     |> assign(:page_title, "Edit List")
     |> assign(:list, Todos.get_list!(socket.assigns.scope, id))
+  end
+
+  def handle_info(:tick, socket) do
+    {:noreply, assign(socket, count: socket.assigns.count + 1)}
   end
 
   def handle_info({TodoTrek.Todos, %Events.ListAdded{list: list} = event}, socket) do
@@ -136,6 +157,15 @@ defmodule TodoTrekWeb.HomeLive do
      socket
      |> stream_insert(:lists, list, at: list.position)
      |> stream_new_log(event)}
+  end
+
+  def handle_event("inc", _, socket) do
+    Process.sleep(1000)
+    {:noreply, assign(socket, count: socket.assigns.count + 1)}
+  end
+
+  def handle_event("dec", _, socket) do
+    {:noreply, assign(socket, count: socket.assigns.count - 1)}
   end
 
   def handle_event("reposition", %{"id" => id, "new" => new_idx, "old" => _old_idx}, socket) do

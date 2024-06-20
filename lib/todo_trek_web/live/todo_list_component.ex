@@ -4,9 +4,38 @@ defmodule TodoTrekWeb.TodoListComponent do
   alias TodoTrek.{Events, Todos}
   alias TodoTrek.Todos.Todo
 
+  def hook(method, opts \\ []) do
+    opts = Keyword.put(opts, :detail, %{method: method})
+    JS.dispatch("phx:call-hook", opts)
+  end
+
+  attr :id, :any, required: true
+  attr :insert_into, :string, required: true
+  attr :on_activate, JS, default: nil
+  attr :on_dismiss, JS, default: nil
+
+  slot :inner_block, required: true
+  slot :template, required: true
+  attr :rest, :global
+
+  def phx_optimistic_stream(assigns) do
+    ~H"""
+    <phx-optimistic-stream
+      id={@id}
+      insert-into={@insert_into}
+      on-activate={@on_activate}
+      on-dismiss={@on_dismiss}
+      {@rest}
+    >
+      <template><%= render_slot(@template) %></template>
+      <%= render_slot(@inner_block) %>
+    </phx-optimistic-stream>
+    """
+  end
+
   def render(assigns) do
     ~H"""
-    <div>
+    <div data-scope>
       <div
         id={"todos-#{@list_id}"}
         phx-update="stream"
@@ -33,6 +62,7 @@ defmodule TodoTrekWeb.TodoListComponent do
             phx-submit="save"
             phx-value-id={form.data.id}
             phx-target={@myself}
+            phx-auto-recover="ignore"
             class="min-w-0 flex-1 drag-ghost:opacity-0"
           >
             <div class="flex">
@@ -46,7 +76,10 @@ defmodule TodoTrekWeb.TodoListComponent do
                   name="hero-check-circle"
                   class={[
                     "w-7 h-7",
-                    if(form[:status].value == :completed, do: "bg-green-600", else: "bg-gray-300")
+                    if(form[:status].value == :completed,
+                      do: "bg-green-600 phx-click-loading:bg-gray-300",
+                      else: "bg-gray-300 phx-click-loading:bg-green-600"
+                    )
                   ]}
                 />
               </button>
@@ -56,13 +89,17 @@ defmodule TodoTrekWeb.TodoListComponent do
                   type="text"
                   field={form[:title]}
                   border={false}
-                  strike_through={form[:status].value == :completed}
                   placeholder="New todo..."
-                  phx-mounted={!form.data.id && JS.focus()}
-                  phx-keydown={!form.data.id && JS.push("discard", target: @myself)}
-                  phx-key="escape"
                   phx-blur={form.data.id && JS.dispatch("submit", to: "##{form.id}")}
                   phx-target={@myself}
+                  class={
+                    if(form[:status].value == :completed,
+                      do:
+                        "line-through text-gray-500 phx-page-loading:text-gray-900 phx-page-loading:no-underline",
+                      else:
+                        "text-gray-900 phx-page-loading:text-gray-500 phx-page-loading:line-through"
+                    )
+                  }
                 />
               </div>
               <button
@@ -79,13 +116,57 @@ defmodule TodoTrekWeb.TodoListComponent do
           </.simple_form>
         </div>
       </div>
-      <.button
-        phx-click={JS.push("new", value: %{at: -1, list_id: @list_id}, target: @myself)}
-        class="mt-4"
+
+      <.phx_optimistic_stream
+        id={"todo-add-#{@list_id}"}
+        insert_into={"todos-#{@list_id}"}
+        on_dismiss={JS.hide(to: "$form") |> JS.show(to: "$addTodo")}
       >
-        add todo
+        <:template>
+          <pending-todo class="relative animate-pulse flex items-center space-x-3 rounded-lg border border-gray-300 bg-white px-2 shadow-sm">
+            <div class="min-w-0 flex-1">
+              <div class="flex">
+                <button type="button" class="w-10" disabled>
+                  <.icon name="hero-check-circle" class="w-7 h-7 bg-gray-300" />
+                </button>
+                <div class="flex-auto">
+                  <.input type="text" border={false} name="pending" value="" disabled />
+                </div>
+                <div class="w-10 -mt-1" />
+              </div>
+            </div>
+          </pending-todo>
+        </:template>
+        <.simple_form
+          for={%{}}
+          phx-submit="create"
+          phx-target={@myself}
+          data-ref="form"
+          class="hidden relative mt-2 flex items-center space-x-3 rounded-lg border border-gray-300 bg-white px-2 shadow-sm focus-within:ring-2 focus-within:ring-indigo-500 focus-within:ring-offset-2 hover:border-gray-400 drag-item:focus-within:ring-0 drag-item:focus-within:ring-offset-0 drag-ghost:bg-zinc-300 drag-ghost:border-0 drag-ghost:ring-0"
+        >
+          <.input
+            type="text"
+            name="title"
+            value=""
+            placeholder="New todo..."
+            errors={[]}
+            border={false}
+            data-ref="input"
+          />
+        </.simple_form>
+      </.phx_optimistic_stream>
+
+      <.button
+        phx-click={
+          JS.hide()
+          |> JS.show(to: "$form")
+          |> JS.focus(to: "$input")
+        }
+        class="mt-2"
+        data-ref="addTodo"
+      >
+        Add Todo
       </.button>
-      <.button phx-click={JS.push("reset", target: @myself)} class="mt-4">reset</.button>
     </div>
     """
   end
@@ -115,6 +196,7 @@ defmodule TodoTrekWeb.TodoListComponent do
 
     {:ok,
      socket
+     |> assign_new(:new_form, fn -> to_change_form(build_todo(list.id), %{}) end)
      |> assign(list_id: list.id, scope: assigns.scope)
      |> stream(:todos, todo_forms)}
   end
@@ -137,46 +219,39 @@ defmodule TodoTrekWeb.TodoListComponent do
     end
   end
 
-  def handle_event("save", %{"todo" => params}, socket) do
+  def handle_event("validate_new", %{"todo" => todo_params} = params, socket) do
+    todo = %Todo{id: params["id"], list_id: socket.assigns.list_id}
+
+    {:noreply, assign(socket, :new_form, to_change_form(todo, todo_params, :validate))}
+  end
+
+  def handle_event("create", params, socket) do
+    # Process.sleep(1000)
     list = Todos.get_list!(socket.assigns.scope, socket.assigns.list_id)
 
     case Todos.create_todo(socket.assigns.scope, list, params) do
       {:ok, new_todo} ->
-        empty_form = to_change_form(build_todo(socket.assigns.list_id), %{})
-
         {:noreply,
          socket
-         |> stream_insert(:todos, to_change_form(new_todo, %{}))
-         |> stream_delete(:todos, empty_form)
-         |> stream_insert(:todos, empty_form)}
+         |> assign(:new_form, to_change_form(build_todo(socket.assigns.list_id), %{}))
+         |> stream_insert(:todos, to_change_form(new_todo, %{}))}
 
       {:error, changeset} ->
-        {:noreply, stream_insert(socket, :todos, to_change_form(changeset, params, :insert))}
+        {:noreply, assign(socket, :new_form, to_change_form(changeset, params, :insert))}
     end
   end
 
   def handle_event("delete", %{"id" => id}, socket) do
     todo = Todos.get_todo!(socket.assigns.scope, id)
-    {:ok, _} = Todos.delete_todo(socket.assigns.scope, todo)
-
-    {:noreply, socket}
+    {:ok, todo} = Todos.delete_todo(socket.assigns.scope, todo)
+    {:noreply, stream_delete(socket, :todos, to_change_form(todo, %{}))}
   end
 
   def handle_event("toggle_complete", %{"id" => id}, socket) do
     todo = Todos.get_todo!(socket.assigns.scope, id)
-    {:ok, _todo} = Todos.toggle_complete(socket.assigns.scope, todo)
+    {:ok, todo} = Todos.toggle_complete(socket.assigns.scope, todo)
 
-    {:noreply, socket}
-  end
-
-  def handle_event("new", %{"at" => at}, socket) do
-    todo = build_todo(socket.assigns.list_id)
-    {:noreply, stream_insert(socket, :todos, to_change_form(todo, %{}), at: at)}
-  end
-
-  def handle_event("reset", _, socket) do
-    todo = build_todo(socket.assigns.list_id)
-    {:noreply, stream(socket, :todos, [to_change_form(todo, %{})], reset: true)}
+    {:noreply, stream_insert(socket, :todos, to_change_form(todo, %{}))}
   end
 
   def handle_event("reposition", %{"id" => id, "new" => new_idx, "old" => _} = params, socket) do

@@ -436,7 +436,7 @@ defmodule TodoTrek.Todos do
   defp topic(%Scope{} = scope), do: "todos:#{scope.current_user.id}"
 
   defp multi_reposition(%Ecto.Multi{} = multi, name, %type{} = struct, lock, new_idx, where_query)
-      when is_integer(new_idx) do
+       when is_integer(new_idx) do
     old_position = from(og in type, where: og.id == ^struct.id, select: og.position)
 
     multi
@@ -484,6 +484,7 @@ defmodule TodoTrek.Todos do
 
   def test(to, %Scope{} = scope) do
     parent = self()
+
     Node.spawn_link(to, fn ->
       IO.inspect(scope)
       send(parent, {:done, node()})

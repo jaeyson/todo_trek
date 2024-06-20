@@ -38,7 +38,7 @@ scope = Scope.for_user(user)
   "Research new workout routine",
   "Review monthly expenses",
   "Check for any needed vaccinations",
-  "Learn to play a new instrument",
+  "Learn to play a new instrument"
 ]
 |> Enum.each(fn title ->
   {:ok, _} = Todos.create_todo(scope, personal, %{title: title})
