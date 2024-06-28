@@ -20,7 +20,7 @@ import "phoenix_html"
 // Establish Phoenix Socket and LiveView configuration.
 import {Socket} from "phoenix"
 // import {LiveSocket} from "phoenix_live_view"
-window.LV_VSN="1.0.0-rc.0";
+window.LV_VSN="1.0.0-rc.6";
 import {LiveSocket, createHook} from "/Users/chris/oss/phoenix_live_view/assets/js/phoenix_live_view"
 import topbar from "../vendor/topbar"
 import Sortable from "../vendor/sortable"
@@ -52,7 +52,9 @@ let prepareHook = (el, callbacks = {}) => {
 
 customElements.define("phx-optimistic-stream", class extends HTMLElement {
   connectedCallback() {
-    let {hook, js, refs} = prepareHook(this)
+    if(this.hook){ return }
+    this.hook = createHook(this, {})
+    let js = this.hook.js()
     let onDismiss = this.getAttribute("on-dismiss")
     let form = this.querySelector("form[phx-submit]")
     let template = this.querySelector("template")
@@ -79,8 +81,9 @@ customElements.define("phx-optimistic-stream", class extends HTMLElement {
       isSubmitting = true
     })
 
-    this.addEventListener("phx:lock", e => {
+    this.addEventListener("phx:push", e => {
       if(e.target !== form){ return }
+      console.log(e.target, e.detail)
       let {lock, unlock} = e.detail
       let pendingItem = this.insertPendingItem(insertInto, template, input)
       unlock([form, input])
@@ -92,6 +95,7 @@ customElements.define("phx-optimistic-stream", class extends HTMLElement {
   }
 
   insertPendingItem(insertInto, template, input){
+    console.log("inserting pending item")
     let pendingFragment = template.content.cloneNode(true)
     insertInto.appendChild(pendingFragment)
     let pendingItem = insertInto.lastElementChild
@@ -305,7 +309,7 @@ let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("
 let liveSocket = new LiveSocket("/live", Socket, {
   params: {_csrf_token: csrfToken},
   hooks: Hooks,
-  dom: {toQuerySelectorAll: (sourceEl, query) => {
+  dom: {jsQuerySelectorAll: (sourceEl, query) => {
     if(query.startsWith("$")){
       let scope = sourceEl.closest(`[data-scope]`) || sourceEl.closest(`[data-phx-session]`)
       let els = scope.querySelectorAll(`[data-ref="${query.slice(1)}"]`)

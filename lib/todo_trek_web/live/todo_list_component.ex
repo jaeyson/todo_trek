@@ -139,7 +139,7 @@ defmodule TodoTrekWeb.TodoListComponent do
         </:template>
         <.simple_form
           for={%{}}
-          phx-submit="create"
+          phx-submit="create_todo"
           phx-target={@myself}
           data-ref="form"
           class="hidden relative mt-2 flex items-center space-x-3 rounded-lg border border-gray-300 bg-white px-2 shadow-sm focus-within:ring-2 focus-within:ring-indigo-500 focus-within:ring-offset-2 hover:border-gray-400 drag-item:focus-within:ring-0 drag-item:focus-within:ring-offset-0 drag-ghost:bg-zinc-300 drag-ghost:border-0 drag-ghost:ring-0"
@@ -225,7 +225,7 @@ defmodule TodoTrekWeb.TodoListComponent do
     {:noreply, assign(socket, :new_form, to_change_form(todo, todo_params, :validate))}
   end
 
-  def handle_event("create", params, socket) do
+  def handle_event("create_todo", params, socket) do
     # Process.sleep(1000)
     list = Todos.get_list!(socket.assigns.scope, socket.assigns.list_id)
 
