@@ -13,11 +13,12 @@ defmodule TodoTrek.Accounts.UserToken do
   @change_email_validity_in_days 7
   @session_validity_in_days 60
 
+  @primary_key {:id, :binary_id, autogenerate: true}
   schema "users_tokens" do
     field :token, :binary
     field :context, :string
     field :sent_to, :string
-    belongs_to :user, TodoTrek.Accounts.User
+    belongs_to :user, TodoTrek.Accounts.User, type: :binary_id
 
     timestamps(updated_at: false)
   end
@@ -59,7 +60,8 @@ defmodule TodoTrek.Accounts.UserToken do
       from token in token_and_context_query(token, "session"),
         join: user in assoc(token, :user),
         where: token.inserted_at > ago(@session_validity_in_days, "day"),
-        select: user
+        select: user,
+        limit: 1
 
     {:ok, query}
   end

@@ -4,7 +4,7 @@ defmodule TodoTrek.Accounts do
   """
 
   import Ecto.Query, warn: false
-  alias TodoTrek.Repo
+  alias TodoTrek.{Repo, ReplicaRepo}
 
   alias TodoTrek.Accounts.{User, UserToken, UserNotifier}
 
@@ -23,7 +23,7 @@ defmodule TodoTrek.Accounts do
 
   """
   def get_user_by_email(email) when is_binary(email) do
-    Repo.get_by(User, email: email)
+    Repo.one(from u in User, where: u.email == ^email, limit: 1)
   end
 
   @doc """
@@ -40,7 +40,7 @@ defmodule TodoTrek.Accounts do
   """
   def get_user_by_email_and_password(email, password)
       when is_binary(email) and is_binary(password) do
-    user = Repo.get_by(User, email: email)
+    user = get_user_by_email(email)
     if User.valid_password?(user, password), do: user
   end
 
@@ -58,7 +58,9 @@ defmodule TodoTrek.Accounts do
       ** (Ecto.NoResultsError)
 
   """
-  def get_user!(id), do: Repo.get!(User, id)
+  def get_user!(id) do
+    Repo.one!(from u in User, where: u.id == ^id, limit: 1)
+  end
 
   ## User registration
 
@@ -231,7 +233,7 @@ defmodule TodoTrek.Accounts do
   """
   def get_user_by_session_token(token) do
     {:ok, query} = UserToken.verify_session_token_query(token)
-    Repo.one(query)
+    ReplicaRepo.one(query)
   end
 
   @doc """

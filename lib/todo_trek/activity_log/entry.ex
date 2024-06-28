@@ -8,7 +8,7 @@ defmodule TodoTrek.EctoTypes.Stringable do
   def type, do: :string
 
   @impl Ecto.Type
-  def cast(val) when is_atom(val), do: {:ok, Atom.to_string(val)}
+  def cast(val) when is_atom(val),do: {:ok, Atom.to_string(val)}
   def cast(val) when is_binary(val), do: {:ok, val}
   def cast(val) when is_integer(val) or is_float(val), do: {:ok, to_string(val)}
   def cast(_), do: :error
@@ -25,6 +25,7 @@ defmodule TodoTrek.ActivityLog.Entry do
   use Ecto.Schema
   import Ecto.Changeset
 
+  @primary_key {:id, :binary_id, autogenerate: true}
   schema "activity_log_entries" do
     field :meta, :map, default: %{}
     field :action, :string
@@ -33,11 +34,11 @@ defmodule TodoTrek.ActivityLog.Entry do
     field :before_text, TodoTrek.EctoTypes.Stringable
     field :after_text, TodoTrek.EctoTypes.Stringable
 
-    belongs_to :todo, TodoTrek.Todos.Todo
-    belongs_to :list, TodoTrek.Todos.List
-    belongs_to :user, TodoTrek.Accounts.User
+    belongs_to :todo, TodoTrek.Todos.Todo, type: :binary_id
+    belongs_to :list, TodoTrek.Todos.List, type: :binary_id
+    belongs_to :user, TodoTrek.Accounts.User, type: :binary_id
 
-    timestamps()
+    timestamps(type: :utc_datetime)
   end
 
   @doc false

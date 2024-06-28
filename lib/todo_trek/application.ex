@@ -6,8 +6,10 @@ defmodule TodoTrek.Application do
   @impl true
   def start(_type, _args) do
     children = [
+      {DNSCluster, query: Application.get_env(:todo_trek, :dns_cluster_query) || :ignore},
       TodoTrekWeb.Telemetry,
       TodoTrek.Repo,
+      TodoTrek.ReplicaRepo,
       {Phoenix.PubSub, name: TodoTrek.PubSub},
       {Finch, name: TodoTrek.Finch},
       TodoTrekWeb.Endpoint

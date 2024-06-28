@@ -69,6 +69,7 @@ defmodule TodoTrekWeb.TodoListComponent do
               <button
                 :if={form.data.id}
                 type="button"
+                name="toggle_complete"
                 phx-click={JS.push("toggle_complete", target: @myself, value: %{id: form.data.id})}
                 class="w-10"
               >
@@ -227,9 +228,7 @@ defmodule TodoTrekWeb.TodoListComponent do
 
   def handle_event("create_todo", params, socket) do
     # Process.sleep(1000)
-    list = Todos.get_list!(socket.assigns.scope, socket.assigns.list_id)
-
-    case Todos.create_todo(socket.assigns.scope, list, params) do
+    case Todos.create_todo(socket.assigns.scope, socket.assigns.list_id, params) do
       {:ok, new_todo} ->
         {:noreply,
          socket

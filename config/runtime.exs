@@ -30,6 +30,8 @@ if config_env() == :prod do
 
   maybe_ipv6 = if System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: []
 
+  config :todo_trek, dns_cluster_query: System.get_env("DNS_CLUSTER_QUERY")
+
   config :todo_trek, TodoTrek.Repo,
     # ssl: true,
     url: database_url,

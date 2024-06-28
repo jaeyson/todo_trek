@@ -2,19 +2,20 @@ defmodule TodoTrek.Todos.List do
   use Ecto.Schema
   import Ecto.Changeset
 
+  @primary_key {:id, :binary_id, autogenerate: true}
   schema "lists" do
     field :title, :string
     field :position, :integer
 
     has_many :todos, TodoTrek.Todos.Todo
-    belongs_to :user, TodoTrek.Accounts.User
+    belongs_to :user, TodoTrek.Accounts.User, type: :binary_id
 
     embeds_many :notifications, EmailNotification, on_replace: :delete do
       field :email, :string
       field :name, :string
     end
 
-    timestamps()
+    timestamps(type: :utc_datetime)
   end
 
   @doc false

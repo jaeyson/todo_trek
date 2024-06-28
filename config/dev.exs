@@ -2,13 +2,31 @@ import Config
 
 # Configure your database
 config :todo_trek, TodoTrek.Repo,
-  username: "postgres",
-  password: "postgres",
-  hostname: "localhost",
-  database: "forms_dev",
+  url: "postgresql://yugabyte:yugabyte@iad.ybx.internal:5433/forms_dev",
+  socket_options: [:inet6],
+  migration_lock: false,
+  queue_target: 30000,
+  # username: "postgres",
+  # password: "postgres",
+  # hostname: "localhost",
+  # database: "forms_dev",
   stacktrace: true,
   show_sensitive_data_on_connection_error: true,
   pool_size: 10
+
+config :todo_trek, TodoTrek.ReplicaRepo,
+  url: "postgresql://yugabyte:yugabyte@iad.ybx.internal:5433/forms_dev",
+  socket_options: [:inet6],
+  migration_lock: false,
+  queue_target: 30000,
+  # username: "postgres",
+  # password: "postgres",
+  # hostname: "localhost",
+  # database: "forms_dev",
+  stacktrace: true,
+  show_sensitive_data_on_connection_error: true,
+  pool_size: 10
+
 
 # For development, we disable any cache and enable
 # debugging and code reloading.

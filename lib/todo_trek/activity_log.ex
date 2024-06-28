@@ -10,14 +10,30 @@ defmodule TodoTrek.ActivityLog do
   import Ecto.Query
   alias TodoTrek.ActivityLog
   alias TodoTrek.ActivityLog.Entry
-  alias TodoTrek.{Repo, Scope, Todos}
+  alias TodoTrek.{Repo, ReplicaRepo, Scope, Todos}
+
+  def build(%Scope{} = scope, %Todos.Todo{} = todo, %{} = attrs) do
+    scope
+    |> build_changeset(todo, attrs)
+    |> Ecto.Changeset.apply_changes()
+    |> Map.take([
+      :meta,
+      :action,
+      :performer_text,
+      :subject_text,
+      :before_text,
+      :after_text,
+      :todo_id,
+      :list_id,
+      :user_id,
+      :inserted_at,
+      :updated_at
+    ])
+  end
 
   def log(%Scope{} = scope, %Todos.Todo{} = todo, %{} = attrs) do
-    id = if todo.__meta__.state == :deleted, do: nil, else: todo.id
-
-    %Entry{todo_id: id, list_id: todo.list_id, user_id: scope.current_user_id}
-    |> put_performer(scope)
-    |> Entry.changeset(attrs)
+    scope
+    |> build_changeset(todo, attrs)
     |> Repo.insert!()
   end
 
@@ -40,10 +56,25 @@ defmodule TodoTrek.ActivityLog do
       limit: ^limit,
       order_by: [desc: l.id]
     )
-    |> Repo.all()
+    |> ReplicaRepo.all()
   end
 
   defp put_performer(%Entry{} = entry, %Scope{} = scope) do
     %Entry{entry | performer_text: scope.current_user.email}
+  end
+
+  defp build_changeset(scope, todo, attrs) do
+    id = if todo.__meta__.state == :deleted, do: nil, else: todo.id
+    now = DateTime.utc_now(:second)
+
+    %Entry{
+      todo_id: id,
+      list_id: todo.list_id,
+      user_id: scope.current_user_id,
+      inserted_at: now,
+      updated_at: now
+    }
+    |> put_performer(scope)
+    |> Entry.changeset(attrs)
   end
 end
