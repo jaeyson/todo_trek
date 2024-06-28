@@ -19,9 +19,8 @@
 import "phoenix_html"
 // Establish Phoenix Socket and LiveView configuration.
 import {Socket} from "phoenix"
-// import {LiveSocket} from "phoenix_live_view"
-window.LV_VSN="1.0.0-rc.6";
-import {LiveSocket, createHook} from "/Users/chris/oss/phoenix_live_view/assets/js/phoenix_live_view"
+import {LiveSocket, createHook} from "phoenix_live_view"
+// window.LV_VSN="1.0.0-rc.6";import {LiveSocket, createHook} from "/Users/chris/oss/phoenix_live_view/assets/js/phoenix_live_view"
 import topbar from "../vendor/topbar"
 import Sortable from "../vendor/sortable"
 

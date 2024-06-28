@@ -21,22 +21,52 @@ if System.get_env("PHX_SERVER") do
 end
 
 if config_env() == :prod do
-  database_url =
-    System.get_env("DATABASE_URL") ||
-      raise """
-      environment variable DATABASE_URL is missing.
-      For example: ecto://USER:PASS@HOST/DATABASE
-      """
+  # database_url =
+  #   System.get_env("DATABASE_URL") ||
+  #     raise """
+  #     environment variable DATABASE_URL is missing.
+  #     For example: ecto://USER:PASS@HOST/DATABASE
+  #     """
 
-  maybe_ipv6 = if System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: []
+  # maybe_ipv6 = if System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: []
+
+  # config :todo_trek, TodoTrek.Repo,
+  #   # ssl: true,
+  #   url: database_url,
+  #   pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
+  #   socket_options: maybe_ipv6
+
 
   config :todo_trek, dns_cluster_query: System.get_env("DNS_CLUSTER_QUERY")
 
   config :todo_trek, TodoTrek.Repo,
-    # ssl: true,
-    url: database_url,
-    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
-    socket_options: maybe_ipv6
+    url: "postgresql://yugabyte:yugabyte@top1.nearest.of.ybx.internal:5433/forms_dev",
+    socket_options: [:inet6],
+    migration_lock: false,
+    queue_target: 30000,
+    # username: "postgres",
+    # password: "postgres",
+    # hostname: "localhost",
+    # database: "forms_dev",
+    stacktrace: true,
+    show_sensitive_data_on_connection_error: false,
+    pool_size: 10
+
+  config :todo_trek, TodoTrek.ReplicaRepo,
+    url: "postgresql://yugabyte:yugabyte@top1.nearest.of.ybx.internal:5433/forms_dev",
+    socket_options: [:inet6],
+    migration_lock: false,
+    queue_target: 30000,
+    # username: "postgres",
+    # password: "postgres",
+    # hostname: "localhost",
+    # database: "forms_dev",
+    stacktrace: true,
+    show_sensitive_data_on_connection_error: false,
+    pool_size: 10
+
+
+
 
   # The secret key base is used to sign/encrypt cookies and other secrets.
   # A default value is used in config/dev.exs and config/test.exs but you
