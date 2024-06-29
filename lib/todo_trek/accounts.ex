@@ -233,7 +233,7 @@ defmodule TodoTrek.Accounts do
   """
   def get_user_by_session_token(token) do
     {:ok, query} = UserToken.verify_session_token_query(token)
-    ReplicaRepo.one(query)
+    Repo.one(query)
   end
 
   @doc """

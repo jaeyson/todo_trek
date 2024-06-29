@@ -8,7 +8,7 @@ defmodule TodoTrek.Repo do
   def stale(as_of \\ 5000, func) when is_integer(as_of) do
     {:ok, result} =
       transaction(fn ->
-        query!("set session characteristics as transaction read only", [])
+        query!("set transaction read only", [])
         query!("set yb_read_from_followers = true", [])
         query!("set yb_follower_read_staleness_ms = #{as_of}", [])
         func.()
@@ -59,10 +59,13 @@ defmodule TodoTrek.ReplicaRepo do
     otp_app: :todo_trek,
     adapter: Ecto.Adapters.Postgres
 
+  require Logger
+
   def set_follower_reads(conn) do
+    Logger.info("Setting follower reads #{System.get_env("FLY_REGION")} #{inspect(node())}")
     Postgrex.query!(conn, "set session characteristics as transaction read only;", [])
     Postgrex.query!(conn, "set yb_read_from_followers = true;", [])
-    Postgrex.query!(conn, "set yb_follower_read_staleness_ms = 2500;", [])
+    Postgrex.query!(conn, "set yb_follower_read_staleness_ms = 5000;", [])
 
     for tab <- ~w(users todos lists) do
       # Fetch basic table information

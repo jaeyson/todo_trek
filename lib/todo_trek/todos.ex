@@ -189,19 +189,23 @@ defmodule TodoTrek.Todos do
 
   Broadcasts %Events.TodoToggled{} on the scoped topic when successful.
   """
-  def toggle_complete(%Scope{} = scope, %Todo{} = todo) do
-    new_status =
-      case todo.status do
-        :completed -> :started
-        :started -> :completed
-      end
-
+  def toggle_complete(%Scope{} = scope, todo_id) when is_binary(todo_id) do
     Ecto.Multi.new()
     |> Ecto.Multi.run(:todo, fn repo, _ ->
       query =
         from(t in Todo,
-          where: t.id == ^todo.id and t.user_id == ^scope.current_user.id,
-          update: [set: [status: ^new_status]],
+          where: t.id == ^todo_id and t.user_id == ^scope.current_user.id,
+          update: [
+            set: [
+              status:
+                fragment(
+                  "CASE WHEN status = ? THEN ? ELSE ? END",
+                  ^"completed",
+                  ^"started",
+                  ^"completed"
+                )
+            ]
+          ],
           select: t
         )
 
@@ -209,11 +213,17 @@ defmodule TodoTrek.Todos do
       {:ok, new_todo}
     end)
     |> Ecto.Multi.run(:log, fn _repo, %{todo: new_todo} ->
+      old_status =
+        case new_todo.status do
+          :completed -> :started
+          :started -> :completed
+        end
+
       {:ok,
        ActivityLog.log(scope, new_todo, %{
          action: "todo_toggled",
-         subject_text: todo.title,
-         before_text: todo.status,
+         subject_text: new_todo.title,
+         before_text: old_status,
          after_text: new_todo.status
        })}
     end)
@@ -276,7 +286,8 @@ defmodule TodoTrek.Todos do
 
       {current_count, title} =
         repo.one!(
-          from(l in List, where: l.id == ^list_id,
+          from(l in List,
+            where: l.id == ^list_id,
             left_join: t in assoc(l, :todos),
             select: {count(t.id), l.title},
             group_by: l.title
@@ -345,7 +356,8 @@ defmodule TodoTrek.Todos do
 
   Broadcasts %Events.TodoAdded{} on the scoped topic when successful.
   """
-  def create_todo(%Scope{} = scope, list_id, todo_id \\ Ecto.UUID.generate(), params) when is_binary(list_id) do
+  def create_todo(%Scope{} = scope, list_id, todo_id \\ Ecto.UUID.generate(), params)
+      when is_binary(list_id) do
     todo = %Todo{
       id: todo_id,
       user_id: scope.current_user.id,

@@ -36,6 +36,7 @@ defmodule TodoTrekWeb.TodoListComponent do
   def render(assigns) do
     ~H"""
     <div data-scope>
+      <div id={"todos-#{@list_id}-last-write-time"}><%= @last_write_time %></div>
       <div
         id={"todos-#{@list_id}"}
         phx-update="stream"
@@ -198,7 +199,7 @@ defmodule TodoTrekWeb.TodoListComponent do
     {:ok,
      socket
      |> assign_new(:new_form, fn -> to_change_form(build_todo(list.id), %{}) end)
-     |> assign(list_id: list.id, scope: assigns.scope)
+     |> assign(list_id: list.id, scope: assigns.scope, last_write_time: nil)
      |> stream(:todos, todo_forms)}
   end
 
@@ -227,12 +228,13 @@ defmodule TodoTrekWeb.TodoListComponent do
   end
 
   def handle_event("create_todo", params, socket) do
+    %{scope: scope, list_id: list_id} = socket.assigns
     # Process.sleep(1000)
-    case Todos.create_todo(socket.assigns.scope, socket.assigns.list_id, params) do
+    case on_primary(fn -> Todos.create_todo(scope, list_id, params) end) do
       {:ok, new_todo} ->
         {:noreply,
          socket
-         |> assign(:new_form, to_change_form(build_todo(socket.assigns.list_id), %{}))
+         |> assign(:new_form, to_change_form(build_todo(list_id), %{}))
          |> stream_insert(:todos, to_change_form(new_todo, %{}))}
 
       {:error, changeset} ->
@@ -247,10 +249,18 @@ defmodule TodoTrekWeb.TodoListComponent do
   end
 
   def handle_event("toggle_complete", %{"id" => id}, socket) do
-    todo = Todos.get_todo!(socket.assigns.scope, id)
-    {:ok, todo} = Todos.toggle_complete(socket.assigns.scope, todo)
+    %{scope: scope} = socket.assigns
+    with_time(fn ->
+      {:ok, todo} = on_primary(fn -> Todos.toggle_complete(scope, id) end)
+      {:noreply, stream_insert(socket, :todos, to_change_form(todo, %{}))}
+    end)
+  end
 
-    {:noreply, stream_insert(socket, :todos, to_change_form(todo, %{}))}
+  def on_primary(func) do
+    case :pg.get_members(:todo_trek_primaries) do
+      [] -> func.()
+      members -> :erpc.call(node(Enum.random(members)), func)
+    end
   end
 
   def handle_event("reposition", %{"id" => id, "new" => new_idx, "old" => _} = params, socket) do
@@ -294,4 +304,13 @@ defmodule TodoTrekWeb.TodoListComponent do
   end
 
   defp build_todo(list_id), do: %Todo{list_id: list_id}
+
+  def with_time(fun) when is_function(fun, 0) do
+    {time_microseconds, result} = :timer.tc(fun)
+    time_milliseconds = div(time_microseconds, 1000)
+
+    case result do
+      {:noreply, socket} -> {:noreply, assign(socket, last_write_time: time_milliseconds)}
+    end
+  end
 end

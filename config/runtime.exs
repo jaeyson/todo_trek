@@ -43,6 +43,7 @@ if config_env() == :prod do
     url: "postgresql://yugabyte:yugabyte@top1.nearest.of.ybx.internal:5433/forms_dev",
     socket_options: [:inet6],
     migration_lock: false,
+    timeout: 60_000,
     queue_target: 30000,
     # username: "postgres",
     # password: "postgres",
@@ -54,8 +55,10 @@ if config_env() == :prod do
 
   config :todo_trek, TodoTrek.ReplicaRepo,
     url: "postgresql://yugabyte:yugabyte@top1.nearest.of.ybx.internal:5433/forms_dev",
+    after_connect: {TodoTrek.ReplicaRepo, :set_follower_reads, []},
     socket_options: [:inet6],
     migration_lock: false,
+    timeout: 60_000,
     queue_target: 30000,
     # username: "postgres",
     # password: "postgres",
@@ -84,6 +87,7 @@ if config_env() == :prod do
   port = String.to_integer(System.get_env("PORT") || "4000")
 
   config :todo_trek, TodoTrekWeb.Endpoint,
+    check_origin: false,
     url: [host: host, port: 443, scheme: "https"],
     http: [
       # Enable IPv6 and bind on all interfaces.

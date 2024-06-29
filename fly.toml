@@ -14,6 +14,7 @@ kill_signal = 'SIGTERM'
   strategy = "immediate"
 
 [env]
+  PRIMARY_REGIONS = 'iad'
   PHX_HOST = 'edgetodo.fly.dev'
   PORT = '8080'
 
