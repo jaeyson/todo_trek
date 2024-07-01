@@ -8,13 +8,6 @@ defmodule TodoTrekWeb.HomeLive do
     ~H"""
     <div id="home" class="space-y-5">
       <.header>
-        The count is
-        <tt-counter id="counter"><%= @count %></tt-counter>
-      </.header>
-      <.button phx-click={JS.push("dec", loading: "#counter")}>-</.button>
-      <.button phx-click={JS.push("inc", loading: "#counter")}>+</.button>
-
-      <.header>
         Your Lists
         <:actions>
           <.link patch={~p"/lists/new"}>

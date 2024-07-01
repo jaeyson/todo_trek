@@ -10,7 +10,7 @@ defmodule TodoTrek.ActivityLog do
   import Ecto.Query
   alias TodoTrek.ActivityLog
   alias TodoTrek.ActivityLog.Entry
-  alias TodoTrek.{Repo, ReplicaRepo, Scope, Todos}
+  alias TodoTrek.{Repo, Scope, Todos}
 
   def build(%Scope{} = scope, %Todos.Todo{} = todo, %{} = attrs) do
     scope
@@ -50,13 +50,15 @@ defmodule TodoTrek.ActivityLog do
     limit = Keyword.fetch!(opts, :limit)
     offset = Keyword.get(opts, :offset, 0)
 
-    from(l in ActivityLog.Entry,
-      where: l.user_id == ^scope.current_user.id,
-      offset: ^offset,
-      limit: ^limit,
-      order_by: [desc: l.inserted_at]
-    )
-    |> ReplicaRepo.all()
+    Repo.stale(scope.last_side_effect_at, fn ->
+      from(l in ActivityLog.Entry,
+        where: l.user_id == ^scope.current_user.id,
+        offset: ^offset,
+        limit: ^limit,
+        order_by: [desc: l.inserted_at]
+      )
+      |> Repo.all()
+    end)
   end
 
   defp put_performer(%Entry{} = entry, %Scope{} = scope) do

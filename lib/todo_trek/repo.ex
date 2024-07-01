@@ -29,16 +29,44 @@ defmodule TodoTrek.Repo do
     end)
   end
 
-  def stale(as_of \\ 5000, func) when is_integer(as_of) do
-    {:ok, result} =
-      transaction(fn ->
-        query!("set transaction read only", [])
-        query!("set yb_read_from_followers = true", [])
-        query!("set yb_follower_read_staleness_ms = #{as_of}", [])
-        func.()
-      end)
+  def stale(as_of_ms_time_ago, func)
+      when is_integer(as_of_ms_time_ago) or is_nil(as_of_ms_time_ago) do
+    now = System.system_time(:millisecond)
+    as_of_ms_time_ago = as_of_ms_time_ago || now - 5_000
+    staleness_ms = now - as_of_ms_time_ago
 
-    result
+    staleness_ms =
+      if staleness_ms > 30_000 do
+        30_000
+      else
+        staleness_ms
+      end
+
+    IO.inspect({:stale, staleness_ms})
+
+    case staleness_ms do
+      staleness_ms when staleness_ms < 2_000 ->
+        IO.inspect({:forcing_consitent_read, staleness_ms})
+        func.()
+
+      _ ->
+        {:ok, result} =
+          transaction(fn ->
+            query!("set transaction read only", [])
+            query!("set yb_read_from_followers = true", [])
+            query!("set yb_follower_read_staleness_ms = #{staleness_ms}", [])
+
+            try do
+              func.()
+            catch
+              kind, error -> reraise(kind, error)
+            after
+              query!("set yb_read_from_followers = false", [])
+            end
+          end)
+
+        result
+    end
   end
 
   def multi_lock_for_update(multi, lock_name, [%schema{} | _] = schemas)

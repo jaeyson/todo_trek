@@ -9,7 +9,6 @@ defmodule TodoTrek.Application do
       {DNSCluster, query: Application.get_env(:todo_trek, :dns_cluster_query) || :ignore},
       TodoTrekWeb.Telemetry,
       TodoTrek.Repo,
-      TodoTrek.ReplicaRepo,
       TodoTrek.RPC,
       {Phoenix.PubSub, name: TodoTrek.PubSub},
       {Finch, name: TodoTrek.Finch},

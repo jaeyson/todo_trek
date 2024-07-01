@@ -274,6 +274,8 @@ Hooks.Sortable = {
     this.el.addEventListener("focusout", e => isDragging && e.stopImmediatePropagation())
     let sorter = new Sortable(this.el, {
       group: group ? {name: group, pull: true, put: true} : undefined,
+      delay: 200,
+      delayOnTouchOnly: true,
       animation: 150,
       dragClass: "drag-item",
       ghostClass: "drag-ghost",
@@ -304,9 +306,12 @@ Hooks.SortableInputsFor = {
   }
 }
 
+let lastSidEffectAt = null
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 let liveSocket = new LiveSocket("/live", Socket, {
-  params: {_csrf_token: csrfToken},
+  params: () => {
+    return {_csrf_token: csrfToken, last_side_effect_at: lastSidEffectAt}
+  },
   longPollFallbackMs: 3500,
   hooks: Hooks,
   dom: {jsQuerySelectorAll: (sourceEl, query) => {
@@ -328,6 +333,14 @@ window.addEventListener("phx:page-loading-stop", _info => topbar.hide())
 
 // connect if there are any LiveViews on the page
 liveSocket.connect()
+
+window.addEventListener("phx:last_side_effect", ({detail: {at}}) => {
+  lastSidEffectAt = at
+  let secondsToExpire = 30
+  let date = new Date()
+  date.setTime(date.getTime() + (secondsToExpire * 1000))
+  document.cookie = `last_side_effect_at=${at};expires=${date.toUTCString()};path=/`
+});
 
 // expose liveSocket on window for web console debug logs and latency simulation:
 // >> liveSocket.enableDebug()

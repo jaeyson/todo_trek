@@ -178,6 +178,10 @@ defmodule TodoTrekWeb.TodoListComponent do
     """
   end
 
+  def mount(socket) do
+    {:ok, TodoTrekWeb.Scope.attach_side_effect_watcher(socket)}
+  end
+
   def update(%{event: %Events.TodoToggled{todo: todo}}, socket) do
     {:ok, stream_insert(socket, :todos, to_change_form(todo, %{}))}
   end

@@ -91,7 +91,14 @@ defmodule TodoTrekWeb.UserAuth do
   def fetch_current_user(conn, _opts) do
     {user_token, conn} = ensure_user_token(conn)
     user = user_token && Accounts.get_user_by_session_token(user_token)
-    assign(conn, :current_user, user)
+
+    if user do
+      conn
+      |> assign(:current_user, user)
+      |> put_session(:last_side_effect_at, conn.cookies["last_side_effect_at"])
+    else
+      assign(conn, :current_user, nil)
+    end
   end
 
   defp ensure_user_token(conn) do

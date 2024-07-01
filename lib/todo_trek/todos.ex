@@ -4,12 +4,12 @@ defmodule TodoTrek.Todos do
   """
 
   import Ecto.Query, warn: false
-  alias TodoTrek.{Repo, ReplicaRepo, Scope, Events}
+  alias TodoTrek.{Repo, Scope, Events}
 
   alias TodoTrek.Todos.{List, Todo}
   alias TodoTrek.ActivityLog
 
-  @max_todos_to_preload 100
+  @max_todos_to_preload 200
   @max_todos_per_list 100
 
   @doc """
@@ -423,20 +423,24 @@ defmodule TodoTrek.Todos do
   Returns the active lists for the current scope.
   """
   def active_lists(%Scope{} = scope, limit) do
-    from(l in List,
-      where: l.user_id == ^scope.current_user.id,
-      limit: ^limit,
-      order_by: [asc: :position]
-    )
-    |> ReplicaRepo.all()
-    |> ReplicaRepo.preload(
-      todos:
-        from(t in Todo,
-          where: t.user_id == ^scope.current_user.id,
-          limit: @max_todos_to_preload,
-          order_by: [asc: t.position]
+    Repo.stale(scope.last_side_effect_at, fn ->
+      lists =
+        from(l in List,
+          where: l.user_id == ^scope.current_user.id,
+          limit: ^limit,
+          order_by: [asc: :position]
         )
-    )
+        |> Repo.all()
+
+      Repo.preload(lists,
+        todos:
+          from(t in Todo,
+            where: t.user_id == ^scope.current_user.id,
+            limit: ^(Enum.count(lists) * @max_todos_per_list),
+            order_by: [asc: t.position]
+          )
+      )
+    end)
   end
 
   @doc """
