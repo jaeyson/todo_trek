@@ -36,7 +36,7 @@ defmodule TodoTrekWeb.TodoListComponent do
   def render(assigns) do
     ~H"""
     <div data-scope>
-      <div id={"todos-#{@list_id}-last-write-time"}><%= @last_write_time %></div>
+      <div id={"todos-#{@list_id}-last-write-time"}><%= @last_write_time || "-" %></div>
       <div
         id={"todos-#{@list_id}"}
         phx-update="stream"
@@ -71,7 +71,12 @@ defmodule TodoTrekWeb.TodoListComponent do
                 :if={form.data.id}
                 type="button"
                 name="toggle_complete"
-                phx-click={JS.push("toggle_complete", target: @myself, value: %{id: form.data.id})}
+                phx-click={
+                  JS.push("toggle_complete",
+                    target: @myself,
+                    value: %{id: form.data.id, status: form[:status].value}
+                  )
+                }
                 class="w-10"
               >
                 <.icon
@@ -185,8 +190,11 @@ defmodule TodoTrekWeb.TodoListComponent do
     {:ok, stream_insert(socket, :todos, to_change_form(todo, %{}))}
   end
 
-  def update(%{event: %Events.TodoRepositioned{todo: todo}}, socket) do
-    {:ok, stream_insert(socket, :todos, to_change_form(todo, %{}), at: todo.position)}
+  def update(%{event: %Events.TodoRepositioned{todo: todo, old_todo: old_todo}}, socket) do
+    {:ok,
+     socket
+     |> stream_delete(:todos, to_change_form(old_todo, %{}))
+     |> stream_insert(:todos, to_change_form(todo, %{}), at: todo.position)}
   end
 
   def update(%{event: %Events.TodoDeleted{todo: todo}}, socket) do
@@ -210,15 +218,17 @@ defmodule TodoTrekWeb.TodoListComponent do
   end
 
   def handle_event("save", %{"id" => id, "todo" => params}, socket) do
-    todo = Todos.get_todo!(socket.assigns.scope, id)
+    with_time(fn ->
+      todo = Todos.get_todo!(socket.assigns.scope, id)
 
-    case Todos.update_todo(socket.assigns.scope, todo, params) do
-      {:ok, updated_todo} ->
-        {:noreply, stream_insert(socket, :todos, to_change_form(updated_todo, %{}))}
+      case Todos.update_todo(socket.assigns.scope, todo, params) do
+        {:ok, updated_todo} ->
+          {:noreply, stream_insert(socket, :todos, to_change_form(updated_todo, %{}))}
 
-      {:error, changeset} ->
-        {:noreply, stream_insert(socket, :todos, to_change_form(changeset, %{}, :insert))}
-    end
+        {:error, changeset} ->
+          {:noreply, stream_insert(socket, :todos, to_change_form(changeset, %{}, :insert))}
+      end
+    end)
   end
 
   def handle_event("validate_new", %{"todo" => todo_params} = params, socket) do
@@ -230,52 +240,55 @@ defmodule TodoTrekWeb.TodoListComponent do
   def handle_event("create_todo", params, socket) do
     %{scope: scope, list_id: list_id} = socket.assigns
     # Process.sleep(1000)
-    case on_primary(fn -> Todos.create_todo(scope, list_id, params) end) do
-      {:ok, new_todo} ->
-        {:noreply,
-         socket
-         |> assign(:new_form, to_change_form(build_todo(list_id), %{}))
-         |> stream_insert(:todos, to_change_form(new_todo, %{}))}
+    with_time(fn ->
+      case Todos.create_todo(scope, list_id, params) do
+        {:ok, new_todo} ->
+          {:noreply,
+           socket
+           |> assign(:new_form, to_change_form(build_todo(list_id), %{}))
+           |> stream_insert(:todos, to_change_form(new_todo, %{}))}
 
-      {:error, changeset} ->
-        {:noreply, assign(socket, :new_form, to_change_form(changeset, params, :insert))}
-    end
+        {:error, changeset} ->
+          {:noreply, assign(socket, :new_form, to_change_form(changeset, params, :insert))}
+      end
+    end)
   end
 
   def handle_event("delete", %{"id" => id}, socket) do
-    todo = Todos.get_todo!(socket.assigns.scope, id)
-    {:ok, todo} = Todos.delete_todo(socket.assigns.scope, todo)
-    {:noreply, stream_delete(socket, :todos, to_change_form(todo, %{}))}
+    %{scope: scope, list_id: list_id} = socket.assigns
+
+    with_time(fn ->
+      {:ok, todo} = Todos.delete_todo(scope, id, list_id)
+      {:noreply, stream_delete(socket, :todos, to_change_form(todo, %{}))}
+    end)
   end
 
-  def handle_event("toggle_complete", %{"id" => id}, socket) do
+  def handle_event("toggle_complete", %{"id" => id, "status" => current_status}, socket) do
     %{scope: scope} = socket.assigns
+
     with_time(fn ->
-      {:ok, todo} = on_primary(fn -> Todos.toggle_complete(scope, id) end)
+      {:ok, todo} =
+        case current_status do
+          "completed" -> Todos.mark_started(scope, id)
+          "started" -> Todos.mark_completed(scope, id)
+        end
+
       {:noreply, stream_insert(socket, :todos, to_change_form(todo, %{}))}
     end)
   end
 
-  def on_primary(func) do
-    case :pg.get_members(:todo_trek_primaries) do
-      [] -> func.()
-      members -> :erpc.call(node(Enum.random(members)), func)
-    end
-  end
-
   def handle_event("reposition", %{"id" => id, "new" => new_idx, "old" => _} = params, socket) do
-    case params do
-      %{"list_id" => old_list_id, "to" => %{"list_id" => old_list_id}} ->
-        todo = Todos.get_todo!(socket.assigns.scope, id)
-        Todos.update_todo_position(socket.assigns.scope, todo, new_idx)
-        {:noreply, socket}
+    with_time(fn ->
+      case params do
+        %{"list_id" => old_list_id, "to" => %{"list_id" => old_list_id}} ->
+          Todos.update_todo_position(socket.assigns.scope, id, old_list_id, new_idx)
+          {:noreply, socket}
 
-      %{"list_id" => _old_list_id, "to" => %{"list_id" => new_list_id}} ->
-        todo = Todos.get_todo!(socket.assigns.scope, id)
-        list = Todos.get_list!(socket.assigns.scope, new_list_id)
-        Todos.move_todo_to_list(socket.assigns.scope, todo, list, new_idx)
-        {:noreply, socket}
-    end
+        %{"list_id" => old_list_id, "to" => %{"list_id" => new_list_id}} ->
+          Todos.move_todo_to_list(socket.assigns.scope, id, old_list_id, new_list_id, new_idx)
+          {:noreply, socket}
+      end
+    end)
   end
 
   def handle_event("discard", _params, socket) do

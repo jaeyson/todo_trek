@@ -4,7 +4,7 @@ defmodule TodoTrek.Accounts do
   """
 
   import Ecto.Query, warn: false
-  alias TodoTrek.{Repo, ReplicaRepo}
+  alias TodoTrek.Repo
 
   alias TodoTrek.Accounts.{User, UserToken, UserNotifier}
 

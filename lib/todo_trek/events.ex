@@ -23,7 +23,7 @@ defmodule TodoTrek.Events do
   end
 
   defmodule TodoRepositioned do
-    defstruct todo: nil, log: nil
+    defstruct todo: nil, old_todo: nil, log: nil
   end
 
   defmodule TodoMoved do

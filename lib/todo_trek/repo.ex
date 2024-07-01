@@ -5,6 +5,30 @@ defmodule TodoTrek.Repo do
 
   import Ecto.Query
 
+  def transact(multi_or_func, opts \\ [])
+
+  def transact(%Ecto.Multi{} = multi, opts) do
+    TodoTrek.RPC.rpc_primary(fn ->
+      retryable_transaction(multi, opts)
+    end)
+  end
+
+  def transact(func, opts) when is_function(func, 0) do
+    TodoTrek.RPC.rpc_primary(fn ->
+      retryable_transaction(
+        fn ->
+          case func.() do
+            {:ok, value} -> value
+            :ok -> :transaction_commited
+            {:error, reason} -> rollback(reason)
+            :error -> rollback(:transaction_rollback_error)
+          end
+        end,
+        opts
+      )
+    end)
+  end
+
   def stale(as_of \\ 5000, func) when is_integer(as_of) do
     {:ok, result} =
       transaction(fn ->
@@ -37,16 +61,16 @@ defmodule TodoTrek.Repo do
     end)
   end
 
-  def retryable_transaction(fun_or_multi, retries \\ 10, sleep \\ 2) do
+  def retryable_transaction(fun_or_multi, opts \\ [], retries \\ 10, sleep \\ 2) do
     try do
-      transaction(fun_or_multi)
+      transaction(fun_or_multi, opts)
     catch
       :error, %Postgrex.Error{postgres: %{code: code}} = err
       when code in [:serialization_failure, :lock_not_available] ->
         if retries > 0 do
           Process.sleep(sleep)
           IO.puts("Retrying rescued transaction, retries left: #{retries - 1}")
-          retryable_transaction(fun_or_multi, retries - 1, sleep * 2)
+          retryable_transaction(fun_or_multi, opts, retries - 1, sleep * 2)
         else
           reraise(err, __STACKTRACE__)
         end

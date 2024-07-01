@@ -54,7 +54,7 @@ defmodule TodoTrek.ActivityLog do
       where: l.user_id == ^scope.current_user.id,
       offset: ^offset,
       limit: ^limit,
-      order_by: [desc: l.id]
+      order_by: [desc: l.inserted_at]
     )
     |> ReplicaRepo.all()
   end

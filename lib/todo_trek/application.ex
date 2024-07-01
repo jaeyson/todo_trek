@@ -5,19 +5,12 @@ defmodule TodoTrek.Application do
 
   @impl true
   def start(_type, _args) do
-    :pg.start_link()
-    with {:ok, regions_str} <- System.fetch_env("PRIMARY_REGIONS"),
-         regions = String.split(regions_str, ","),
-         true <- System.fetch_env!("FLY_REGION") in regions do
-
-      :pg.join(:todo_trek_primaries, self())
-    end
-
     children = [
       {DNSCluster, query: Application.get_env(:todo_trek, :dns_cluster_query) || :ignore},
       TodoTrekWeb.Telemetry,
       TodoTrek.Repo,
       TodoTrek.ReplicaRepo,
+      TodoTrek.RPC,
       {Phoenix.PubSub, name: TodoTrek.PubSub},
       {Finch, name: TodoTrek.Finch},
       TodoTrekWeb.Endpoint

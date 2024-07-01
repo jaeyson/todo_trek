@@ -31,7 +31,7 @@ defmodule TodoTrek.Todos do
   def update_list_position(%Scope{} = scope, %List{} = list, new_index) do
     Ecto.Multi.new()
     |> multi_reposition(:new, list, _lock = [list], new_index, user_id: scope.current_user.id)
-    |> Repo.transaction()
+    |> Repo.transact()
     |> case do
       {:ok, _} ->
         new_list = %List{list | position: new_index}
@@ -58,30 +58,45 @@ defmodule TodoTrek.Todos do
 
   Broadcasts %Events.TodoRepositioned{} on the scoped topic.
   """
-  def update_todo_position(%Scope{} = scope, %Todo{} = todo, new_index) do
-    Ecto.Multi.new()
-    |> multi_reposition(:new, todo, _lock = {List, [todo.list_id]}, new_index,
-      list_id: todo.list_id
-    )
-    |> Repo.transaction()
+  def update_todo_position(%Scope{} = scope, todo_id, list_id, new_index)
+      when is_binary(todo_id) and is_binary(list_id) do
+    Repo.transact(fn ->
+      # lock todo and list, and enforce todo still belongs to list
+      {todo, list} =
+        Repo.one!(
+          from t in Todo,
+            where:
+              t.id == ^todo_id and t.list_id == ^list_id and
+                t.user_id == ^scope.current_user.id,
+            join: l in assoc(t, :list),
+            on: l.id == t.list_id,
+            where: l.user_id == ^scope.current_user.id,
+            select: {t, l},
+            limit: 1,
+            lock: "FOR UPDATE"
+        )
+
+      {:ok, new_index} = reposition(todo, new_index, list_id: list.id)
+
+      log =
+        ActivityLog.log(scope, todo, %{
+          action: "todo_position_updated",
+          subject_text: todo.title,
+          before_text: todo.position,
+          after_text: new_index
+        })
+
+      new_todo = %Todo{todo | position: new_index}
+
+      {:ok, {new_todo, todo, log}}
+    end)
     |> case do
-      {:ok, _} ->
-        new_todo = %Todo{todo | position: new_index}
-
-        log =
-          ActivityLog.log(scope, todo, %{
-            action: "todo_position_updated",
-            subject_text: todo.title,
-            before_text: todo.position,
-            after_text: new_index
-          })
-
-        broadcast(scope, %Events.TodoRepositioned{todo: new_todo, log: log})
-
+      {:ok, {new_todo, old_todo, log}} ->
+        broadcast(scope, %Events.TodoRepositioned{todo: new_todo, old_todo: old_todo, log: log})
         :ok
 
-      {:error, _failed_op, failed_val, _changes_so_far} ->
-        {:error, failed_val}
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -95,48 +110,70 @@ defmodule TodoTrek.Todos do
   Broadcasts %Events.TodoDeleted{} on the scoped topic for the old list.
   Broadcasts %Events.TodoRepositioned{} on the scoped topic for the new list.
   """
-  def move_todo_to_list(%Scope{} = scope, %Todo{} = todo, %List{} = list, at_index) do
-    Ecto.Multi.new()
-    |> Repo.multi_lock_for_update(:locks, {List, [todo.list_id, list.id]})
-    |> multi_update_all(:dec_positions, fn _ ->
-      from(t in Todo,
-        where: t.list_id == ^todo.list_id,
-        where:
-          t.position > subquery(from og in Todo, where: og.id == ^todo.id, select: og.position),
-        update: [inc: [position: -1]]
-      )
+  def move_todo_to_list(%Scope{} = scope, todo_id, old_list_id, new_list_id, at_index)
+      when is_binary(old_list_id) and is_binary(new_list_id) and old_list_id != new_list_id do
+    Repo.transact(fn ->
+      {todo, old_list} =
+        Repo.one!(
+          from t in Todo,
+            where:
+              t.id == ^todo_id and t.list_id == ^old_list_id and
+                t.user_id == ^scope.current_user.id,
+            join: l in assoc(t, :list),
+            on: l.id == t.list_id,
+            where: l.user_id == ^scope.current_user.id,
+            select: {t, l},
+            limit: 1,
+            lock: "FOR UPDATE"
+        )
+
+      {new_list, pos_at_end} =
+        Repo.one!(
+          from(l in List,
+            where: l.id == ^new_list_id and l.user_id == ^scope.current_user.id,
+            select:
+              {l, subquery(from t in Todo, where: t.list_id == ^new_list_id, select: count(t.id))},
+            limit: 1,
+            lock: "FOR UPDATE"
+          )
+        )
+
+      # decrement positions in old list
+      {_, _} = Repo.update_all(decrement_positions_query(todo, list_id: old_list.id), [])
+      # move todo to end of new list
+      {1, _} =
+        Repo.update_all(
+          from(t in Todo,
+            where: t.id == ^todo.id,
+            update: [set: [list_id: ^new_list.id, position: ^pos_at_end]]
+          ),
+          []
+        )
+
+      # reposition in new list
+      {:ok, new_index} = reposition(todo, at_index, list_id: new_list.id)
+
+      # bump values
+      new_todo = %Todo{todo | list: new_list, list_id: new_list.id, position: new_index}
+
+      # log activity
+      log =
+        ActivityLog.log(scope, new_todo, %{
+          action: "todo_moved",
+          subject_text: new_todo.title,
+          before_text: old_list.title,
+          after_text: new_list.title
+        })
+
+      {:ok, {new_todo, todo, log}}
     end)
-    |> Ecto.Multi.run(:pos_at_end, fn repo, _changes ->
-      position = repo.one(from t in Todo, where: t.list_id == ^list.id, select: count(t.id))
-      {:ok, position}
-    end)
-    |> multi_update_all(:move_to_list, fn %{pos_at_end: pos_at_end} ->
-      from(t in Todo,
-        where: t.id == ^todo.id,
-        update: [set: [list_id: ^list.id, position: ^pos_at_end]]
-      )
-    end)
-    |> multi_reposition(:new, todo, _lock = [list], at_index, list_id: list.id)
-    |> Repo.transaction()
     |> case do
-      {:ok, _} ->
-        new_todo = %Todo{todo | list: list, list_id: list.id, position: at_index}
-
-        log =
-          ActivityLog.log(scope, new_todo, %{
-            action: "todo_moved",
-            subject_text: new_todo.title,
-            before_text: todo.list.title,
-            after_text: list.title
-          })
-
-        broadcast(scope, %Events.TodoDeleted{todo: todo})
-        broadcast(scope, %Events.TodoRepositioned{todo: new_todo, log: log})
-
+      {:ok, {new_todo, old_todo, log}} ->
+        broadcast(scope, %Events.TodoRepositioned{todo: new_todo, old_todo: old_todo, log: log})
         :ok
 
-      {:error, _failed_op, failed_val, _changes_so_far} ->
-        {:error, failed_val}
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -145,30 +182,37 @@ defmodule TodoTrek.Todos do
 
   Broadcasts %Events.TodoDeleted{} on the scoped topic when successful.
   """
-  def delete_todo(%Scope{} = scope, %Todo{} = todo) do
-    Ecto.Multi.new()
-    |> Repo.multi_lock_for_update(:locks, {List, [todo.list_id]})
-    |> multi_decrement_positions(:dec_rest_in_list, todo, list_id: todo.list_id)
-    |> Ecto.Multi.delete(:todo, todo)
-    |> Ecto.Multi.run(:log, fn _repo, %{todo: deleted_todo} ->
-      log =
-        ActivityLog.log(scope, deleted_todo, %{
-          action: "todo_deleted",
-          subject_text: deleted_todo.title
-        })
+  def delete_todo(%Scope{} = scope, todo_id, list_id)
+      when is_binary(todo_id) and is_binary(list_id) do
+    Repo.transact(fn ->
+      # locks todo and list
+      todo_lock_query =
+        from(t in Todo,
+          where:
+            t.id == ^todo_id and t.user_id == ^scope.current_user.id and
+              t.list_id == ^list_id,
+          join: l in assoc(t, :list),
+          where: l.user_id == ^scope.current_user.id,
+          select: {t, l},
+          lock: "FOR UPDATE",
+          limit: 1
+        )
 
-      {:ok, log}
-    end)
-    |> Repo.retryable_transaction(20)
-    |> case do
-      {:ok, %{todo: todo, log: log}} ->
+      with {%Todo{} = todo, %List{} = list} <- Repo.one(todo_lock_query),
+           {_, _} <- Repo.update_all(decrement_positions_query(todo, list_id: list.id), []),
+           {:ok, deleted_todo} <- Repo.delete(todo) do
+        log =
+          ActivityLog.log(scope, deleted_todo, %{
+            action: "todo_deleted",
+            subject_text: deleted_todo.title
+          })
+
         broadcast(scope, %Events.TodoDeleted{todo: todo, log: log})
-
         {:ok, todo}
-
-      {:error, _failed_op, failed_val, _changes_so_far} ->
-        {:error, failed_val}
-    end
+      else
+        _ -> {:error, :not_found}
+      end
+    end)
   end
 
   @doc """
@@ -185,57 +229,48 @@ defmodule TodoTrek.Todos do
   end
 
   @doc """
-  Toggles a todo status for the current scope.
+  Updates a todo as completed for the current scope.
 
   Broadcasts %Events.TodoToggled{} on the scoped topic when successful.
   """
-  def toggle_complete(%Scope{} = scope, todo_id) when is_binary(todo_id) do
-    Ecto.Multi.new()
-    |> Ecto.Multi.run(:todo, fn repo, _ ->
-      query =
+  def mark_completed(%Scope{} = scope, todo_id) when is_binary(todo_id) do
+    toggle_status(scope, todo_id, :completed)
+  end
+
+  @doc """
+  Updates a todo as started for the current scope.
+
+  Broadcasts %Events.TodoToggled{} on the scoped topic when successful.
+  """
+  def mark_started(%Scope{} = scope, todo_id) when is_binary(todo_id) do
+    toggle_status(scope, todo_id, :started)
+  end
+
+  defp toggle_status(%Scope{} = scope, todo_id, new_status)
+       when is_binary(todo_id) and new_status in [:completed, :started] do
+    old_status = if new_status == :completed, do: :started, else: :completed
+
+    Repo.transact(fn ->
+      update_query =
         from(t in Todo,
           where: t.id == ^todo_id and t.user_id == ^scope.current_user.id,
-          update: [
-            set: [
-              status:
-                fragment(
-                  "CASE WHEN status = ? THEN ? ELSE ? END",
-                  ^"completed",
-                  ^"started",
-                  ^"completed"
-                )
-            ]
-          ],
+          update: [set: [status: ^new_status]],
           select: t
         )
 
-      {1, [new_todo]} = repo.update_all(query, [])
-      {:ok, new_todo}
-    end)
-    |> Ecto.Multi.run(:log, fn _repo, %{todo: new_todo} ->
-      old_status =
-        case new_todo.status do
-          :completed -> :started
-          :started -> :completed
-        end
+      with {1, [new_todo]} <- Repo.update_all(update_query, []) do
+        log =
+          ActivityLog.log(scope, new_todo, %{
+            action: "todo_toggled",
+            subject_text: new_todo.title,
+            before_text: old_status,
+            after_text: new_todo.status
+          })
 
-      {:ok,
-       ActivityLog.log(scope, new_todo, %{
-         action: "todo_toggled",
-         subject_text: new_todo.title,
-         before_text: old_status,
-         after_text: new_todo.status
-       })}
-    end)
-    |> Repo.retryable_transaction()
-    |> case do
-      {:ok, %{todo: new_todo, log: log}} ->
         broadcast(scope, %Events.TodoToggled{todo: new_todo, log: log})
         {:ok, new_todo}
-
-      {:error, :todo, changeset, _changes_so_far} ->
-        {:error, changeset}
-    end
+      end
+    end)
   end
 
   def get_todo!(%Scope{} = scope, id) do
@@ -280,17 +315,17 @@ defmodule TodoTrek.Todos do
     # The lock itself works in that positions are updated properly, but the
     # order the user added the todos is not guaranteed to match.
     Ecto.Multi.new()
-    |> Repo.multi_lock_for_update(:locks, {List, [list_id]})
     |> Ecto.Multi.run(:list, fn repo, _changes ->
       todos_count = length(todos)
 
       {current_count, title} =
-        repo.one!(
+        Repo.one!(
           from(l in List,
-            where: l.id == ^list_id,
-            left_join: t in assoc(l, :todos),
-            select: {count(t.id), l.title},
-            group_by: l.title
+            where: l.id == ^list_id and l.user_id == ^scope.current_user.id,
+            select:
+              {subquery(from t in Todo, where: t.list_id == ^list_id, select: count(t.id)),
+               l.title},
+            lock: "FOR UPDATE"
           )
         )
 
@@ -337,7 +372,7 @@ defmodule TodoTrek.Todos do
 
       {:ok, {logs, todos_map}}
     end)
-    |> Repo.retryable_transaction()
+    |> Repo.transact()
     |> case do
       {:ok, %{list: {_count, _title, todos}, log: {logs, todos_map}}} ->
         for log <- logs, todo = Map.fetch!(todos_map, log.todo_id) do
@@ -443,7 +478,7 @@ defmodule TodoTrek.Todos do
 
       {:ok, log}
     end)
-    |> Repo.retryable_transaction()
+    |> Repo.transact()
     |> case do
       {:ok, %{list: list, log: log}} ->
         list = Repo.preload(list, :todos)
@@ -495,7 +530,7 @@ defmodule TodoTrek.Todos do
     |> Repo.multi_lock_for_update(:user_lock, [scope.current_user])
     |> multi_decrement_positions(:dec_rest_in_parent, list, user_id: list.user_id)
     |> Ecto.Multi.delete(:list, list)
-    |> Repo.transaction()
+    |> Repo.transact()
     |> case do
       {:ok, %{list: list}} ->
         log =
@@ -581,5 +616,59 @@ defmodule TodoTrek.Todos do
         update: [inc: [position: -1]]
       )
     end)
+  end
+
+  defp decrement_positions_query(%type{} = struct, where_query) do
+    from(t in type,
+      where: ^where_query,
+      where:
+        t.position > subquery(from og in type, where: og.id == ^struct.id, select: og.position),
+      update: [inc: [position: -1]]
+    )
+  end
+
+  defp reposition(%type{} = struct, new_idx, where_query) when is_integer(new_idx) do
+    old_position = from(og in type, where: og.id == ^struct.id, select: og.position)
+
+    computed_index =
+      case Repo.one(from(t in type, where: ^where_query, select: count(t.id))) do
+        count when new_idx < count -> new_idx
+        count -> count - 1
+      end
+
+    # decrement positions of items after old position and before new position
+    {_, _} =
+      Repo.update_all(
+        from(t in type,
+          where: ^where_query,
+          where: t.id != ^struct.id,
+          where: t.position > subquery(old_position) and t.position <= ^computed_index,
+          update: [inc: [position: -1]]
+        ),
+        []
+      )
+
+    # increment positions of items after new position and before old position
+    {_, _} =
+      Repo.update_all(
+        from(t in type,
+          where: ^where_query,
+          where: t.id != ^struct.id,
+          where: t.position < subquery(old_position) and t.position >= ^computed_index,
+          update: [inc: [position: 1]]
+        ),
+        []
+      )
+
+    {_, _} =
+      Repo.update_all(
+        from(t in type,
+          where: t.id == ^struct.id,
+          update: [set: [position: ^computed_index]]
+        ),
+        []
+      )
+
+    {:ok, computed_index}
   end
 end
