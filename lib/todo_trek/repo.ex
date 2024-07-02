@@ -125,21 +125,15 @@ defmodule TodoTrek.ReplicaRepo do
     now = System.system_time(:millisecond)
     as_of_ms_time_ago = as_of_ms_time_ago || now - 30_000
     staleness_ms = now - as_of_ms_time_ago
-
     staleness_ms = if staleness_ms > 30_000, do: 30_000, else: staleness_ms
 
-    IO.inspect({:stale, staleness_ms})
-
-    case staleness_ms do
-      staleness_ms when staleness_ms < 2_000 ->
-        IO.inspect({:forcing_consitent_read, staleness_ms})
-        func.(TodoTrek.Repo)
-
-      _ ->
-        checkout(fn ->
-          query!("SELECT set_yb_read_stale($1);", [staleness_ms])
-          func.(TodoTrek.ReplicaRepo)
-        end)
+    if staleness_ms < 2_000 do
+      func.(TodoTrek.Repo)
+    else
+      checkout(fn ->
+        query!("SELECT set_yb_read_stale($1);", [staleness_ms])
+        func.(TodoTrek.ReplicaRepo)
+      end)
     end
   end
 end
