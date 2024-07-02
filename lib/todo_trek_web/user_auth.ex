@@ -32,6 +32,8 @@ defmodule TodoTrekWeb.UserAuth do
     conn
     |> renew_session()
     |> put_token_in_session(token)
+    |> put_session(:last_side_effect_at, to_string(System.system_time(:millisecond)))
+    |> delete_resp_cookie("last_side_effect_at")
     |> maybe_write_remember_me_cookie(token, params)
     |> redirect(to: user_return_to || signed_in_path(conn))
   end
@@ -90,12 +92,20 @@ defmodule TodoTrekWeb.UserAuth do
   """
   def fetch_current_user(conn, _opts) do
     {user_token, conn} = ensure_user_token(conn)
-    user = user_token && Accounts.get_user_by_session_token(user_token)
+
+    last_side_effect_at =
+      if str = conn.cookies["last_side_effect_at"] || get_session(conn, :last_side_effect_at) do
+        TodoTrek.Scope.validate_last_side_effect_at(str)
+      else
+        System.system_time(:millisecond)
+      end
+
+    user = user_token && Accounts.get_user_by_session_token(user_token, last_side_effect_at)
 
     if user do
       conn
       |> assign(:current_user, user)
-      |> put_session(:last_side_effect_at, conn.cookies["last_side_effect_at"])
+      |> put_session(:last_side_effect_at, last_side_effect_at)
     else
       assign(conn, :current_user, nil)
     end
@@ -182,7 +192,7 @@ defmodule TodoTrekWeb.UserAuth do
   defp mount_current_user(session, socket) do
     Phoenix.Component.assign_new(socket, :current_user, fn ->
       if user_token = session["user_token"] do
-        Accounts.get_user_by_session_token(user_token)
+        Accounts.get_user_by_session_token(user_token, session["last_side_effect_at"])
       end
     end)
   end

@@ -24,16 +24,6 @@ import {LiveSocket, createHook} from "phoenix_live_view"
 import topbar from "../vendor/topbar"
 import Sortable from "../vendor/sortable"
 
-class Counter extends HTMLElement {
-  constructor() {
-    super()
-    let inc = (by) => this.innerText = parseInt(this.innerText) + by
-    this.addEventListener("phx:lock:inc", () => inc(1))
-    this.addEventListener("phx:lock:dec", () => inc(-1))
-  }
-}
-customElements.define("tt-counter", Counter)
-
 // wrap LV's createHook to prefetch all data-ref elements, and bind JS to the hook element
 let prepareHook = (el, callbacks = {}) => {
   let hook = createHook(el, callbacks)
@@ -275,6 +265,7 @@ Hooks.Sortable = {
     let sorter = new Sortable(this.el, {
       group: group ? {name: group, pull: true, put: true} : undefined,
       delay: 200,
+      filter: ".phx-submit-loading",
       delayOnTouchOnly: true,
       animation: 150,
       dragClass: "drag-item",
@@ -283,6 +274,7 @@ Hooks.Sortable = {
       onEnd: e => {
         isDragging = false
         let params = {old: e.oldIndex, new: e.newIndex, to: e.to.dataset, ...e.item.dataset}
+        e.item.classList.add("phx-submit-loading")
         this.pushEventTo(this.el, this.el.dataset["drop"] || "reposition", params)
       }
     })

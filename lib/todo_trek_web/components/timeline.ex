@@ -5,16 +5,18 @@ defmodule TodoTrekWeb.Timeline do
 
   attr :stream, :any, required: true
   attr :page, :integer, required: true
+  attr :page_timing, :integer, default: nil
   attr :end_of_timeline?, :boolean, required: true
 
   def activity_logs(assigns) do
     ~H"""
     <span
       :if={@page > 1}
-      class="text-3xl fixed bottom-2 right-2 bg-zinc-900 text-white rounded-lg p-3 text-center min-w-[65px] z-50 opacity-80"
+      class="text-3xl fixed bottom-2 right-2 bg-zinc-900 text-white rounded-lg p-3 pt-4 text-center min-w-[65px] z-50 opacity-80"
     >
       <span class="text-sm">pg</span>
       <%= @page %>
+      <span :if={@page_timing} class="text-sm text-gray-300 absolute top-0 right-2"><%= @page_timing %>ms</span>
     </span>
 
     <ul
@@ -24,8 +26,8 @@ defmodule TodoTrekWeb.Timeline do
       phx-viewport-bottom={!@end_of_timeline? && "next-page"}
       phx-page-loading
       class={[
-        if(@end_of_timeline?, do: "pb-10", else: "pb-[calc(200vh)]"),
-        if(@page == 1, do: "pt-10", else: "pt-[calc(200vh)]")
+        if(@end_of_timeline?, do: "pb-10", else: "pb-[calc(250vh)]"),
+        if(@page == 1, do: "pt-10", else: "pt-[calc(250vh)]")
       ]}
     >
       <li :for={{id, entry} <- @stream} id={id}>

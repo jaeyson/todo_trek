@@ -3,6 +3,7 @@ import Config
 # Configure your database
 config :todo_trek, TodoTrek.Repo,
   url: "postgresql://yugabyte:yugabyte@iad.ybx.internal:5433/forms_dev",
+  after_connect: {TodoTrek.Repo, :warmup, []},
   socket_options: [:inet6],
   migration_lock: false,
   queue_target: 30000,
@@ -12,7 +13,7 @@ config :todo_trek, TodoTrek.Repo,
   # database: "forms_dev",
   stacktrace: true,
   show_sensitive_data_on_connection_error: true,
-  pool_size: 10
+  pool_size: 1
 
 config :todo_trek, TodoTrek.ReplicaRepo,
   url: "postgresql://yugabyte:yugabyte@lax.ybx.internal:5433/forms_dev",
@@ -27,7 +28,7 @@ config :todo_trek, TodoTrek.ReplicaRepo,
   # database: "forms_dev",
   stacktrace: true,
   show_sensitive_data_on_connection_error: true,
-  pool_size: 10
+  pool_size: 1
 
 
 # For development, we disable any cache and enable

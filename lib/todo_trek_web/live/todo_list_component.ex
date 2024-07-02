@@ -36,7 +36,6 @@ defmodule TodoTrekWeb.TodoListComponent do
   def render(assigns) do
     ~H"""
     <div data-scope>
-      <div id={"todos-#{@list_id}-last-write-time"}><%= @last_write_time || "-" %></div>
       <div
         id={"todos-#{@list_id}"}
         phx-update="stream"
@@ -64,7 +63,7 @@ defmodule TodoTrekWeb.TodoListComponent do
             phx-value-id={form.data.id}
             phx-target={@myself}
             phx-auto-recover="ignore"
-            class="min-w-0 flex-1 drag-ghost:opacity-0"
+            class="min-w-0 flex-1 drag-ghost:opacity-0 phx-submit-loading:opacity-50"
           >
             <div class="flex">
               <button
@@ -74,7 +73,8 @@ defmodule TodoTrekWeb.TodoListComponent do
                 phx-click={
                   JS.push("toggle_complete",
                     target: @myself,
-                    value: %{id: form.data.id, status: form[:status].value}
+                    value: %{id: form.data.id, status: form[:status].value},
+                    loading: "##{form.id}"
                   )
                 }
                 class="w-10"
@@ -102,25 +102,25 @@ defmodule TodoTrekWeb.TodoListComponent do
                   class={
                     if(form[:status].value == :completed,
                       do:
-                        "line-through text-gray-500 phx-page-loading:text-gray-900 phx-page-loading:no-underline",
+                        "line-through !text-gray-500 phx-click-loading:!text-gray-900 phx-click-loading:no-underline",
                       else:
-                        "text-gray-900 phx-page-loading:text-gray-500 phx-page-loading:line-through"
+                        "!text-gray-900 phx-click-loading:!text-gray-500 phx-click-loading:line-through"
                     )
                   }
                 />
               </div>
-              <button
-                :if={form.data.id}
-                type="button"
-                phx-click={
-                  JS.push("delete", target: @myself, value: %{id: form.data.id}) |> hide("##{id}")
-                }
-                class="w-10 -mt-1"
-              >
-                <.icon name="hero-x-mark" />
-              </button>
             </div>
           </.simple_form>
+          <button
+            :if={form.data.id}
+            type="button"
+            phx-click={
+              JS.push("delete", target: @myself, value: %{id: form.data.id}) |> hide("##{id}")
+            }
+            class="w-10 -mt-1 drag-ghost:opacity-0 phx-submit-loading:opacity-30"
+          >
+            <.icon name="hero-x-mark" />
+          </button>
         </div>
       </div>
 
@@ -139,7 +139,11 @@ defmodule TodoTrekWeb.TodoListComponent do
                 <div class="flex-auto">
                   <.input type="text" border={false} name="pending" value="" disabled />
                 </div>
-                <div class="w-10 -mt-1" />
+                <div class="w-10 flex space-x-1 relative left-2 top-4">
+                  <span class="h-1 w-1 mt-[2px] bg-gray-300 rounded-full animate-bounce [animation-delay:-0.3s]" />
+                  <span class="h-1 w-1 mt-[2px] bg-gray-300 rounded-full animate-bounce [animation-delay:-0.15s]" />
+                  <span class="h-1 w-1 mt-[2px] bg-gray-300 rounded-full animate-bounce" />
+                </div>
               </div>
             </div>
           </pending-todo>
@@ -178,8 +182,10 @@ defmodule TodoTrekWeb.TodoListComponent do
     """
   end
 
+  @events_with_side_effects ~w(save create_todo delete toggle_complete reposition)
+
   def mount(socket) do
-    {:ok, TodoTrekWeb.Scope.attach_side_effect_watcher(socket)}
+    {:ok, TodoTrekWeb.Scope.register_side_effects(socket, @events_with_side_effects)}
   end
 
   def update(%{event: %Events.TodoToggled{todo: todo}}, socket) do
@@ -211,7 +217,7 @@ defmodule TodoTrekWeb.TodoListComponent do
     {:ok,
      socket
      |> assign_new(:new_form, fn -> to_change_form(build_todo(list.id), %{}) end)
-     |> assign(list_id: list.id, scope: assigns.scope, last_write_time: nil)
+     |> assign(list_id: list.id, scope: assigns.scope)
      |> stream(:todos, todo_forms)}
   end
 
@@ -325,9 +331,8 @@ defmodule TodoTrekWeb.TodoListComponent do
   def with_time(fun) when is_function(fun, 0) do
     {time_microseconds, result} = :timer.tc(fun)
     time_milliseconds = div(time_microseconds, 1000)
-
-    case result do
-      {:noreply, socket} -> {:noreply, assign(socket, last_write_time: time_milliseconds)}
-    end
+    {:noreply, socket} = result
+    send(self(), {:timing, time_milliseconds})
+    {:noreply, socket}
   end
 end

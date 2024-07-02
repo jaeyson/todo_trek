@@ -4,12 +4,11 @@ defmodule TodoTrek.Todos do
   """
 
   import Ecto.Query, warn: false
-  alias TodoTrek.{Repo, Scope, Events}
+  alias TodoTrek.{Repo, ReplicaRepo, Scope, Events}
 
   alias TodoTrek.Todos.{List, Todo}
   alias TodoTrek.ActivityLog
 
-  @max_todos_to_preload 200
   @max_todos_per_list 100
 
   @doc """
@@ -17,7 +16,7 @@ defmodule TodoTrek.Todos do
 
   For logged in users, this will be a topic scoped only to the logged in user.
   If the system is extended to allow shared lists, the topic subscription could
-  be derived for a particular organizatoin or team, particlar list, and so on.
+  be derived for a particular organization or team, particular list, and so on.
   """
   def subscribe(%Scope{} = scope) do
     Phoenix.PubSub.subscribe(TodoTrek.PubSub, topic(scope))
@@ -423,16 +422,16 @@ defmodule TodoTrek.Todos do
   Returns the active lists for the current scope.
   """
   def active_lists(%Scope{} = scope, limit) do
-    Repo.stale(scope.last_side_effect_at, fn ->
+    ReplicaRepo.stale(scope.last_side_effect_at, fn repo ->
       lists =
         from(l in List,
           where: l.user_id == ^scope.current_user.id,
           limit: ^limit,
           order_by: [asc: :position]
         )
-        |> Repo.all()
+        |> repo.all()
 
-      Repo.preload(lists,
+      repo.preload(lists,
         todos:
           from(t in Todo,
             where: t.user_id == ^scope.current_user.id,

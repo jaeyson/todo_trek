@@ -26,8 +26,7 @@ defmodule TodoTrek.Scope do
 
     last_side_effect_at =
       case last_at_param do
-        str when is_binary(str) -> validate_last_side_effect_at(String.to_integer(str))
-        int when is_integer(int) -> validate_last_side_effect_at(int)
+        at when is_binary(at) or is_integer(at) -> validate_last_side_effect_at(at)
         _ -> nil
       end
 
@@ -38,8 +37,14 @@ defmodule TodoTrek.Scope do
     }
   end
 
-  defp validate_last_side_effect_at(at) when is_integer(at) do
+  def validate_last_side_effect_at(at) when is_integer(at) or is_binary(at) do
     now = now_time()
+
+    at =
+      case at do
+        at when is_binary(at) -> String.to_integer(at)
+        at when is_integer(at) -> at
+      end
 
     cond do
       at > now or at <= 0 -> now - 30_000

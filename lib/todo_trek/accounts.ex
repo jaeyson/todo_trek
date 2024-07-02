@@ -4,7 +4,7 @@ defmodule TodoTrek.Accounts do
   """
 
   import Ecto.Query, warn: false
-  alias TodoTrek.Repo
+  alias TodoTrek.{Repo, ReplicaRepo}
 
   alias TodoTrek.Accounts.{User, UserToken, UserNotifier}
 
@@ -231,9 +231,9 @@ defmodule TodoTrek.Accounts do
   @doc """
   Gets the user with the given signed token.
   """
-  def get_user_by_session_token(token) do
+  def get_user_by_session_token(token, last_side_effect_at) do
     {:ok, query} = UserToken.verify_session_token_query(token)
-    Repo.one(query)
+    ReplicaRepo.stale(last_side_effect_at, fn repo -> repo.one(query) end)
   end
 
   @doc """
