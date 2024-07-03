@@ -6,7 +6,13 @@ defmodule TodoTrekWeb.HomeLive do
 
   def render(assigns) do
     ~H"""
-    <div id="timing" :if={@timing} class="fixed bottom-0 opacity-80 right-0 px-2 rounded-tl-md text-white bg-black min-w-[60px] h-[22px] z-10"><%= @timing %>ms</div>
+    <div
+      :if={@timing}
+      id="timing"
+      class="fixed bottom-0 opacity-80 right-0 px-2 rounded-tl-md text-white bg-black min-w-[60px] h-[22px] z-10"
+    >
+      <%= @timing %>ms
+    </div>
     <div id="home" class="space-y-5">
       <.header>
         Your Lists
@@ -93,7 +99,10 @@ defmodule TodoTrekWeb.HomeLive do
      |> assign(page: 1, per_page: 30, count: 0, timing: nil, page_timing: nil)
      |> stream(:lists, lists)
      |> paginate_logs(1)
-     |> TodoTrekWeb.Scope.register_side_effects(~w(reposition delete-list))}
+     |> TodoTrekWeb.Scope.register_side_effects(
+       ~w(reposition delete-list),
+       &match?({TodoTrek.Todos, _}, &1)
+     )}
   end
 
   def handle_params(params, _uri, socket) do
@@ -155,19 +164,18 @@ defmodule TodoTrekWeb.HomeLive do
   def handle_info({TodoTrek.Todos, %Events.ListRepositioned{list: list} = event}, socket) do
     {:noreply,
      socket
+     |> stream_delete(:lists, list)
      |> stream_insert(:lists, list, at: list.position)
      |> stream_new_log(event)}
   end
 
-  def handle_event("reposition", %{"id" => id, "new" => new_idx, "old" => _old_idx}, socket) do
-    list = Todos.get_list!(socket.assigns.scope, id)
-    Todos.update_list_position(socket.assigns.scope, list, new_idx)
+  def handle_event("reposition", %{"id" => list_id, "new" => new_idx, "old" => _old_idx}, socket) do
+    :ok = Todos.update_list_position(socket.assigns.scope, list_id, new_idx)
     {:noreply, socket}
   end
 
   def handle_event("delete-list", %{"id" => id}, socket) do
-    list = Todos.get_list!(socket.assigns.scope, id)
-    Todos.delete_list(socket.assigns.scope, list)
+    Todos.delete_list(socket.assigns.scope, id)
     {:noreply, socket}
   end
 
@@ -202,9 +210,10 @@ defmodule TodoTrekWeb.HomeLive do
   defp paginate_logs(socket, new_page) when new_page >= 1 do
     %{per_page: per_page, page: cur_page, scope: scope} = socket.assigns
 
-    {logs, time} = time_ms(fn ->
-      ActivityLog.list_user_logs(scope, offset: (new_page - 1) * per_page, limit: per_page)
-    end)
+    {logs, time} =
+      time_ms(fn ->
+        ActivityLog.list_user_logs(scope, offset: (new_page - 1) * per_page, limit: per_page)
+      end)
 
     {logs, at, limit} =
       if new_page >= cur_page do

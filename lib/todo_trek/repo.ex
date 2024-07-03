@@ -68,6 +68,7 @@ defmodule TodoTrek.Repo do
 
   def warmup(conn) do
     Logger.info("Warmup #{System.get_env("FLY_REGION")} #{inspect(node())}")
+
     for tab <- ~w(users todos lists activity_log_entries) do
       # Fetch basic table information
       Postgrex.query!(conn, "SELECT relname, relkind FROM pg_class WHERE relname = '#{tab}';", [])
@@ -101,14 +102,23 @@ defmodule TodoTrek.Repo do
 
       # Run an EXPLAIN to prefetch query plan information
       Postgrex.query!(conn, "EXPLAIN SELECT * FROM #{tab} WHERE 1 = 0;", [])
+      # Run a simple query to load data into cache
+      Postgrex.query!(conn, "SELECT * FROM #{tab} LIMIT 1;", [])
+
+      # Distributed queries to ensure cluster nodes are warmed up
+      Postgrex.query!(conn, "SELECT * FROM #{tab} WHERE id IS NULL;", [])
     end
+
+    # Call the yb warm-up function
+    Postgrex.query!(conn, "SELECT warmup_yb_metadata();", [])
   end
 end
 
 defmodule TodoTrek.ReplicaRepo do
   use Ecto.Repo,
     otp_app: :todo_trek,
-    adapter: Ecto.Adapters.Postgres
+    adapter: Ecto.Adapters.Postgres,
+    read_only: true
 
   require Logger
 
@@ -118,6 +128,10 @@ defmodule TodoTrek.ReplicaRepo do
     Postgrex.query!(conn, "set yb_read_from_followers = true;", [])
     Postgrex.query!(conn, "set session characteristics as transaction read only;", [])
     Postgrex.query!(conn, "set yb_follower_read_staleness_ms = 5000;", [])
+  end
+
+  def stale(%TodoTrek.Scope{} = scope, func) do
+    stale(scope.last_side_effect_at, func)
   end
 
   def stale(as_of_ms_time_ago, func)

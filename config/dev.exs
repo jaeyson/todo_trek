@@ -16,7 +16,7 @@ config :todo_trek, TodoTrek.Repo,
   pool_size: 1
 
 config :todo_trek, TodoTrek.ReplicaRepo,
-  url: "postgresql://yugabyte:yugabyte@lax.ybx.internal:5433/forms_dev",
+  url: "postgresql://yugabyte:yugabyte@iad.ybx.internal:5433/forms_dev",
   after_connect: {TodoTrek.ReplicaRepo, :set_follower_reads, []},
   socket_options: [:inet6],
   migration_lock: false,

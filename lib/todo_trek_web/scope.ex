@@ -10,7 +10,7 @@ defmodule TodoTrekWeb.Scope do
     {:cont, new_socket}
   end
 
-  def register_side_effects(socket, events) do
+  def register_side_effects(socket, events, info_match \\ nil) do
     socket =
       socket
       |> Phoenix.LiveView.attach_hook(:side_effects, :handle_event, fn event, _params, socket ->
@@ -22,8 +22,15 @@ defmodule TodoTrekWeb.Scope do
       socket
     else
       Phoenix.LiveView.attach_hook(socket, :side_effects_bump, :handle_info, fn
-        {__MODULE__, :bump}, socket -> {:halt, bump_last_side_effect(socket)}
-        _msg, socket -> {:cont, socket}
+        {__MODULE__, :bump}, socket ->
+          {:halt, bump_last_side_effect(socket)}
+
+        msg, socket ->
+          if info_match && info_match.(msg) do
+            {:cont, bump_last_side_effect(socket)}
+          else
+            {:cont, socket}
+          end
       end)
     end
   end

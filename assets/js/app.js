@@ -270,9 +270,13 @@ Hooks.Sortable = {
       animation: 150,
       dragClass: "drag-item",
       ghostClass: "drag-ghost",
-      onStart: e => isDragging = true, // prevent phx-blur from firing while dragging
+      onStart: e => {
+        // prevent phx-blur from firing while dragging
+        isDragging = true
+      },
       onEnd: e => {
         isDragging = false
+        if(e.newIndex === e.oldIndex && e.to.dataset.list_id === e.item.dataset.list_id){ return }
         let params = {old: e.oldIndex, new: e.newIndex, to: e.to.dataset, ...e.item.dataset}
         e.item.classList.add("phx-submit-loading")
         this.pushEventTo(this.el, this.el.dataset["drop"] || "reposition", params)
